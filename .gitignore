@@ -1,0 +1,52 @@
+# ============================================================
+#  window-mcp-v2 —— 绝不提交的东西
+#  （本仓库是公开仓库：只提交源码与文档，不提交任何凭据/个人标识）
+# ============================================================
+
+# --- 配置与凭据 -------------------------------------------------
+config.toml
+config.toml.bak-*
+*.bak-*
+.env
+.env.*
+MUSE-TOKEN.txt
+PANEL-LOGIN.txt
+*TOKEN*
+# *TOKEN* 在 Windows 上（core.ignorecase=true）会误伤这两个源码文件，显式放行：
+!mcp_server/tokens.py
+!tests/test_token_names.py
+secrets/
+state/
+.cloudflared/
+cert.pem
+*.pem
+*.key
+*.p12
+*.pfx
+
+# --- 命名隧道：真实域名 + 本机凭据路径，只提交 config.example.yml -----
+tunnel/config.yml
+
+# --- 数据文件 ---------------------------------------------------
+*.sqlite
+*.sqlite3
+*.db
+
+# --- 运行期产物 -------------------------------------------------
+logs/
+*.log
+.pytest_cache/
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+.mcp_backup/
+node_modules/
+dist/
+build/
+target/
+src-tauri/target/
+
+# --- 截图与审计记录 ---------------------------------------------
+docs/panel-ui/

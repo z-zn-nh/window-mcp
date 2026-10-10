@@ -1,0 +1,177 @@
+# Windows MCP 服务器配置样例。
+# 复制成 config.toml 再改。config.toml 本身在禁止访问列表里，MCP 工具读不到也写不了。
+
+[server]
+# --- 网络 ---
+host = "127.0.0.1"          # 只监听本机，绝不监听 0.0.0.0
+port = 8765
+path = "/mcp"
+# 审批推送消息里的批准/拒绝链接要用公网地址，手机才点得开。
+# 配好隧道/反代后填这里，例如 "https://pc.example.com"
+public_base_url = ""
+# MCP SDK 的 DNS 重绑定保护会校验 Host 头。经隧道/反向代理访问时 Host 会变成
+# 公网域名，必须列进来，否则 /mcp 一律返回 421 Invalid Host header。
+# public_base_url 里的域名会被自动追加；这里可显式补充其他域名或端口。
+# 例：["127.0.0.1:8765", "pc.example.com", "pc.example.com:8443"]
+allowed_hosts = []
+allowed_origins = []
+
+# --- 鉴权 ---
+# 轮换期可以同时放新旧两个 token，换完再删旧的（Hark 那边换密钥是「删掉再注册」）。
+# 生成方式：python -c "import secrets;print(secrets.token_urlsafe(48))"
+tokens = ["在这里填你的-token"]
+# 审批端点用的独立密钥；留空则复用 tokens[0]。
+# 注意：为了能在手机上直接点通知里的链接，/admin/approve 也接受 ?token= 查询参数，
+# 所以这个值要当成会被写进浏览器历史的密钥对待。
+admin_token = ""
+auth_header = "authorization"   # 若在 Hark 里指定了自定义头名（如 x-api-key），改这里
+auth_scheme = "Bearer"
+
+# --- 路径规则 ---
+# 读写根目录。路径先 realpath 再比对，符号链接/junction 都会被解析。
+read_roots = ["D:/window-mcp/workspace"]
+write_roots = ["D:/window-mcp/workspace"]
+# 禁止访问的模式（fnmatch，大小写不敏感）。config.toml 和 state/ 永远禁止。
+denied_patterns = [
+  "**/.ssh/**",
+  "**/*.pem", "**/*.key", "**/*.pfx", "**/*.p12",
+  "**/id_rsa*", "**/id_ed25519*", "**/id_ecdsa*",
+  "**/.env", "**/.env.*",
+  "**/.aws/**", "**/.kube/config", "**/.docker/config.json",
+  "**/appdata/roaming/microsoft/credentials/**",
+  "**/appdata/local/google/chrome/user data/**",
+  "**/appdata/roaming/mozilla/firefox/profiles/**",
+  "**/config.toml",
+  "**/state/**",
+]
+
+# --- 命令执行 ---
+default_timeout_s = 30
+max_timeout_s = 50          # Hark 单次调用默认 60 秒超时，留出余量
+max_output_bytes = 20480    # 超出部分截断，完整内容在 log_file 里
+max_read_bytes = 204800
+wsl_distro = ""             # 空表示用默认发行版；本机有 Ubuntu / Ubuntu-24.04
+
+# --- 命令审批策略 ---
+# danger-only（默认）：只有命中「危险命令清单」才审批，其余直接执行。
+#    清单覆盖：删除、磁盘分区、注册表/服务/防火墙/计划任务、提权与动态执行、
+#    下载执行、安装、发布、结束进程、关机，以及引用凭证/密钥路径的命令。
+# whitelist：旧行为，除白名单前缀外一律审批（非常啰嗦，不推荐）。
+command_policy = "danger-only"
+# 追加到内置危险清单的自定义正则，例如 ["^my-dangerous-tool"]
+extra_danger_patterns = []
+# 命令写到工作目录之外时转审批（防止误覆盖系统文件）。
+# 想让 Hark 能写桌面/下载目录，把 write_roots 放宽即可，别关这个开关。
+restrict_writes_to_roots = true
+
+# --- 限速 ---
+rate_per_minute = 60
+# 只有危险命令才计入这个额度（danger-only 下普通命令不占）
+rate_high_per_hour = 30
+
+# --- 审批 ---
+approval_ttl_s = 600        # 10 分钟，超时自动拒绝
+dedupe_ttl_s = 600          # request_id 幂等窗口
+
+# --- 截屏 ---
+# R = 自动放行（默认）；H = 需要审批；X = 直接禁用
+screenshot_level = "R"
+screenshot_max_width = 1600
+screenshot_quality = 70
+# --- GUI 操作（type_text / click / hotkey / wake_screen）---
+# R = 免审批直接执行（默认）；H = 每次操作都要审批；X = 直接禁用
+gui_level = "R"
+gui_max_chars = 10000       # 单次 type_text 的字符上限
+
+# --- 屏幕常亮 / 屏保 / 电源 ---
+# 服务器运行期间按住 ES_DISPLAY_REQUIRED，显示器不会自动熄灭、系统不会睡眠。
+# 不需要管理员权限；代价是只要服务器在跑，这台电脑就不会自动熄屏。
+keep_display_awake = true
+# 启动时关掉屏幕保护程序（只写 HKCU；改动前的原值会打进启动日志，可照着还原）。
+disable_screensaver = true
+# 启动时把当前电源方案里「关显示器 / 睡眠 / 休眠」超时设为「永不」（powercfg -change）。
+# 改的是电源方案本身，重启后依然有效；失败会把原因原样打进启动日志。
+power_tweaks = true
+# 启动时关掉「动态锁」：配对的手机离开蓝牙范围就自动锁屏。
+# 屏幕 / 屏保 / 电源全配成「永不」之后，这一条往往是唯一还在触发锁屏的机制。
+# 只写 HKCU，不需要管理员；改动前的值会打进启动日志，想恢复照着填回去即可
+# （或在 设置 → 账户 → 登录选项 → 动态锁 里重新打开）。
+disable_dynamic_lock = true
+# --- 下面这两项不归服务器管，必须管理员手动设一次 ---
+# 「合上盖子会不会锁屏」由电源方案里两项决定，它们默认隐藏，powercfg 的列表里
+# 看不到，而且改它们需要管理员权限，所以服务器只在启动日志里把当前值打出来：
+#   SUB_BUTTONS\LIDACTION   合上盖子操作  0=不采取任何操作 1=睡眠(合盖就会锁屏)
+#   SUB_NONE\CONSOLELOCK    唤醒时需要密码 0=否 1=是(唤醒后要输 PIN)
+# 解除隐藏后可在「控制面板 → 电源选项 → 更改高级电源设置」里看到：
+#   powercfg -attributes SUB_NONE 0e796bdb-100d-47d6-a2d5-f7d2daa51f51 -ATTRIB_HIDE
+#   powercfg -attributes SUB_BUTTONS 5ca83367-6e45-459f-a27b-476b1d01c936 -ATTRIB_HIDE
+# 一键还原：D:/window-mcp/restore-display-and-lock.cmd
+
+# --- 目录 ---
+# log_dir / state_dir / work_dir 留空则用项目下的 logs / state / workspace
+log_dir = ""
+state_dir = ""
+work_dir = ""
+
+# --- 审批推送通道（至少配一条；都不配就只能用 /admin/pending 或 CLI）---
+# 大陆网络下优先企业微信/Server酱，Telegram 需要代理。
+
+# [server.notifier.webhook]
+# enabled = true
+# url = "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=你的key"
+# format = "wecom"          # generic / wecom / dingtalk / serverchan
+
+# [server.notifier.ntfy]
+# enabled = true
+# server = "https://ntfy.sh"
+# topic = "你的私有主题"
+# token = ""
+
+# [server.notifier.telegram]
+# enabled = true
+# bot_token = ""
+# chat_id = ""
+
+# ---------------------------------------------------------------------------
+# bot token 管理面板 + 远程审批（[server.panel]）
+#
+# 面板是独立端口上的独立 ASGI 应用，通过同一个命名隧道暴露成 admin.example.com。
+# 它的鉴权与 MCP 的 token 完全无关：
+#   * passphrase —— 本地管理口令（文件里只有 scrypt 哈希）
+#   * access     —— Cloudflare Access 的 Cf-Access-Jwt-Assertion（验签 + aud + 邮箱）
+# auth_mode = "both" 时：口令始终必需；**只有经 Cloudflare 进来的请求**才额外要求
+# 有效 Access JWT。所以本机直连 http://127.0.0.1:8771 永远进得去，出问题有修复路径。
+# ---------------------------------------------------------------------------
+[server.panel]
+enabled = true
+host = "127.0.0.1"              # 绝不 0.0.0.0；对外只走命名隧道
+port = 8771
+auth_mode = "both"              # passphrase / access / either / both
+passphrase_file = "secrets/panel.passphrase"
+session_ttl_s = 43200           # 口令登录后的会话 12 小时
+bots_file = "state/bots.json"
+pepper_file = "secrets/bots.key"   # bot token 的 HMAC pepper（只存文件，ACL 收紧）
+access_team = ""                # 形如 xxx.cloudflareaccess.com（建好 Access 应用后填）
+access_aud = ""                 # 该应用的 AUD Tag（填了它 Access 这道门才生效）
+access_emails = []
+access_jwks_file = ""           # 离线/测试用；平时留空
+access_cache_file = "state/access-jwks.json"   # JWKS 落盘缓存，断网也能验
+tool_prefix = ""                # 面板里显示工具名用的前缀；留空则跟随 server.tool_prefix
+
+# --- 远程审批（每个 bot × 每个工具 三档：放行 / 审批 / 禁止）---
+# bot 调用「审批」档工具时请求会被挂起等你在手机上点批准；超时自动拒绝并回明确错误。
+# 会动鼠标键盘的工具（type_text / click / hotkey / uia_click / uia_type）共用一把
+# 全局锁，同一时间只允许一个 bot 持有，其余排队。
+# approval_wait_s 与 ntfy_topic 面板「设置」页也能改，改完立刻生效（不用重启）。
+approval_wait_s = 120           # 单次「审批」调用最多阻塞多少秒（10 ~ 600）
+auto_allow_minutes = 10         # 面板上「本 bot N 分钟内同类放行」的时长
+lock_wait_s = 120               # 抢鼠标键盘全局锁最多排队多少秒（10 ~ 600）
+settings_file = "state/panel-settings.json"
+
+# --- 手机推送（ntfy）---
+# 通知里只有 bot 名、工具名和面板链接，不带 token，也不带参数明文。
+# ntfy.sh 是公开服务器，topic 名就是唯一的「密码」，所以用一个随机串。
+ntfy_server = "https://ntfy.sh"
+ntfy_topic = ""                 # 例如 wmcp-replace-with-your-own-topic；留空 = 不推送
+ntfy_token = ""                 # 自建 ntfy 才需要
+public_url = "https://admin.example.com"   # 通知里「打开审批面板」指向的地址

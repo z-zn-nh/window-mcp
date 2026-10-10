@@ -1,0 +1,34 @@
+# Cloudflare 命名隧道配置样例 —— mcp.example.com -> 127.0.0.1:8770
+#
+# 复制成 tunnel/config.yml 再改成你自己的域名。真正的 config.yml 在
+# .gitignore 里（里面是本机部署用的真实域名与凭据查找路径），不提交。
+#
+# 启动方式（自启 + 看门狗）：<项目目录>\supervise_tunnel.cmd
+#   cloudflared 可执行文件放在项目外，例如 <工具目录>\cloudflared.exe
+# 手动调试命令：
+#   cloudflared tunnel --config <项目目录>\tunnel\config.yml run <隧道名>
+#
+# credentials-file 故意不写：按名字查隧道时，cloudflared 会自动去
+# ~/.cloudflared/<TUNNEL-UUID>.json 找凭据。
+
+tunnel: window-mcp
+
+# 若本机网络封 QUIC/UDP 7844，必须走 http2；不确定就保留这一行。
+protocol: http2
+
+ingress:
+  # MCP 本体。Host 头必须落在 config.toml 的 allowed_hosts 里，
+  # 否则 MCP SDK 的 DNS 重绑定保护会一律返回 421 Invalid Host header。
+  - hostname: mcp.example.com
+    service: http://127.0.0.1:8770
+    originRequest:
+      httpHostHeader: mcp.example.com
+
+  # bot token 管理面板（独立端口 8771）。这里**不写** httpHostHeader：
+  # cloudflared 默认就把原始 Host 透传下去，而面板自己的 Host 白名单里有它；
+  # 写死反而容易和别的主机名串味。
+  - hostname: admin.example.com
+    service: http://127.0.0.1:8771
+
+  # 兜底：不匹配的主机名直接 404，避免被当成开放代理
+  - service: http_status:404
